@@ -78,6 +78,9 @@ export class PlaybackEngine {
   private actionEngine: ActionEngine;
   private callbacks: PlaybackEngineCallbacks;
 
+  // Scene-level narration voiceover element (separate from per-line audioPlayer)
+  private narrationAudio: HTMLAudioElement | null = null;
+
   // Scene identity (for snapshot validation)
   private sceneId: string | undefined;
 
@@ -222,6 +225,7 @@ export class PlaybackEngine {
   pause(): void {
     if (this.mode === 'playing') {
       this.invalidatePlaybackGeneration();
+      this.stopSceneNarration();
       // Cancel pending timers
       if (this.triggerDelayTimer) {
         clearTimeout(this.triggerDelayTimer);
@@ -320,6 +324,7 @@ export class PlaybackEngine {
     // synchronous onend callbacks (see handleUserInterrupt for details).
     this.setMode('idle');
     this.audioPlayer.stop();
+    this.stopSceneNarration();
     this.cancelBrowserTTS();
     this.actionEngine.clearEffects();
     if (this.triggerDelayTimer) {
@@ -547,6 +552,29 @@ export class PlaybackEngine {
   }
 
   /**
+   * Play scene-level narration voiceover (if the scene has one) on a dedicated
+   * element. Fire-and-forget: it does not gate the action loop, and it is
+   * stopped when playback pauses/stops or the scene changes.
+   */
+  private playSceneNarration(scene: Scene): void {
+    this.stopSceneNarration();
+    const url = scene.narrationUrl;
+    if (!url || typeof window === 'undefined') return;
+    const el = new Audio(url);
+    el.play().catch(() => {
+      // Autoplay policy or decode error — narration is best-effort, ignore.
+    });
+    this.narrationAudio = el;
+  }
+
+  private stopSceneNarration(): void {
+    if (this.narrationAudio) {
+      this.narrationAudio.pause();
+      this.narrationAudio = null;
+    }
+  }
+
+  /**
    * Core processing loop: consume the next action.
    */
   private async processNext(generation: number = this.playbackGeneration): Promise<void> {
@@ -558,6 +586,9 @@ export class PlaybackEngine {
       this.actionEngine.clearEffects();
       this.callbacks.onSceneChange?.(scene.id);
       this.callbacks.onSpeakerChange?.('teacher');
+      // Scene-level narration voiceover: play once on a dedicated element so it
+      // does not collide with per-line speech (which uses this.audioPlayer).
+      this.playSceneNarration(scene);
     }
 
     const current = this.getCurrentAction();

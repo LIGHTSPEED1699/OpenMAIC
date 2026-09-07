@@ -18,6 +18,8 @@ const MIME_TYPES: Record<string, string> = {
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.aac': 'audio/aac',
+  '.m4a': 'audio/mp4',
+  '.m4b': 'audio/mp4',
 };
 
 export async function GET(
@@ -79,7 +81,7 @@ export async function GET(
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(stat.size),
-        'Cache-Control': 'public, max-age=86400, immutable',
+        'Cache-Control': 'no-store',
       },
     });
   } catch (error) {

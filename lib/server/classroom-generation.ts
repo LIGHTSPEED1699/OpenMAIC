@@ -1,4 +1,7 @@
 import { nanoid } from 'nanoid';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import path from 'node:path';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';
 import type { StageStore } from '@/lib/api/stage-api-types';
@@ -56,6 +59,7 @@ export interface GenerateClassroomInput {
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
+  enableNarration?: boolean;
   agentMode?: 'default' | 'generate';
 }
 
@@ -66,6 +70,7 @@ export type ClassroomGenerationStep =
   | 'generating_scenes'
   | 'generating_media'
   | 'generating_tts'
+  | 'generating_narration'
   | 'persisting'
   | 'completed';
 
@@ -718,6 +723,39 @@ export async function generateClassroom(
   );
 
   log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
+
+  // Phase: Abogen narration (best-effort). Delegates to a Python script that
+  // extracts each scene's speech text, synthesizes per-scene M4B via the local
+  // Abogen service, and stamps `narrationUrl` on each scene. Wrapped in
+  // try/catch so a down Abogen or a script failure does not fail generation.
+  if (input.enableNarration) {
+    await options.onProgress?.({
+      step: 'generating_narration',
+      progress: 99,
+      message: 'Generating Abogen narration audio',
+      scenesGenerated: scenes.length,
+      totalScenes: outlines.length,
+    });
+    try {
+      const execFileAsync = promisify(execFile);
+      // Narration is delegated to a Python script that talks to the local
+      // Abogen service. The script + storage dir are configurable via env so
+      // this works outside this repo (see scripts/narration_pipeline.py).
+      const scriptPath = process.env.NARRATION_PIPELINE_SCRIPT
+        ?? path.join(process.cwd(), 'scripts', 'narration_pipeline.py');
+      const classroomsDir = process.env.CLASSROOMS_DIR
+        ?? path.join(process.cwd(), 'data', 'classrooms');
+      const { stdout, stderr } = await execFileAsync(
+        'python3',
+        [scriptPath, persisted.id, classroomsDir],
+        { timeout: 30 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 },
+      );
+      log.info(`Narration pipeline stdout: ${stdout}`);
+      if (stderr) log.warn(`Narration pipeline stderr: ${stderr}`);
+    } catch (err) {
+      log.warn('Abogen narration phase failed, continuing:', err);
+    }
+  }
 
   await options.onProgress?.({
     step: 'completed',

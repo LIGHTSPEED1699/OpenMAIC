@@ -3,18 +3,70 @@ import path from 'path';
 import type { NextRequest } from 'next/server';
 import type { Scene, Stage } from '@/lib/types/stage';
 
-export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
-export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
+// Classroom storage location. Override with CLASSROOMS_DATA_DIR env to land on
+// a large drive; otherwise defaults to <project>/data (stock behavior).
+const STORAGE_ROOT = process.env.CLASSROOMS_DATA_DIR ?? path.join(process.cwd(), 'data');
+export const CLASSROOMS_DIR = path.join(STORAGE_ROOT, 'classrooms');
+export const CLASSROOM_JOBS_DIR = path.join(STORAGE_ROOT, 'classroom-jobs');
+
+// Legacy storage location (pre-env-config). Classrooms were previously written
+// to <project>/data/classrooms. When the storage path moved to a non-project
+// CLASSROOMS_DATA_DIR, the JSON made it to the new location but the per-classroom
+// media subdirectories (written by the external narration pipeline) did not
+// follow — stranding the audio. This migration copies any legacy data (including
+// media dirs) into the current location so a future path change can never split
+// the data again.
+const LEGACY_CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
+const LEGACY_CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
 
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
 }
 
+async function dirExists(dir: string): Promise<boolean> {
+  try {
+    return (await fs.stat(dir)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function copyDirRecursive(src: string, dest: string) {
+  await ensureDir(dest);
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirRecursive(s, d);
+    } else {
+      await fs.copyFile(s, d);
+    }
+  }
+}
+
+/**
+ * Migrate any legacy classroom data into the current storage location.
+ * Idempotent and non-destructive: copies (never deletes) legacy JSON + media
+ * subdirectories into CLASSROOMS_DIR / CLASSROOM_JOBS_DIR. Safe to call on
+ * every startup — it no-ops when no legacy data exists.
+ */
+export async function migrateLegacyClassroomData(): Promise<void> {
+  if (await dirExists(LEGACY_CLASSROOMS_DIR)) {
+    await copyDirRecursive(LEGACY_CLASSROOMS_DIR, CLASSROOMS_DIR);
+  }
+  if (await dirExists(LEGACY_CLASSROOM_JOBS_DIR)) {
+    await copyDirRecursive(LEGACY_CLASSROOM_JOBS_DIR, CLASSROOM_JOBS_DIR);
+  }
+}
+
 export async function ensureClassroomsDir() {
+  await migrateLegacyClassroomData();
   await ensureDir(CLASSROOMS_DIR);
 }
 
 export async function ensureClassroomJobsDir() {
+  await migrateLegacyClassroomData();
   await ensureDir(CLASSROOM_JOBS_DIR);
 }
 
@@ -46,6 +98,7 @@ export function isValidClassroomId(id: string): boolean {
 }
 
 export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
+  await migrateLegacyClassroomData();
   const filePath = path.join(CLASSROOMS_DIR, `${id}.json`);
   try {
     const content = await fs.readFile(filePath, 'utf-8');

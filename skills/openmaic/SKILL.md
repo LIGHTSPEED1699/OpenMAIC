@@ -95,6 +95,12 @@ Load [references/generate-flow.md](references/generate-flow.md).
 
 Use this only after the service is healthy. Confirm before reading local PDFs. If the user has already clearly asked to generate, do not ask for a second confirmation before submitting the generation job, and then follow the polling loop until it succeeds or fails. Only send the supported content fields for generation requests. For long-running jobs, prefer sparse polling and tell the user to check back later if the turn ends before completion.
 
+After the classroom is generated, if the user wants voiceover audio, follow the
+**Narration Wiring (Abogen audio)** section in [references/generate-flow.md](references/generate-flow.md) —
+it documents generating per-scene M4B audio with the local Abogen service and
+wiring it into the classroom as scene-level narration (including the critical
+"rebuild wipes classroom data" gotcha).
+
 ## Response Style
 
 - Keep each step short and explicit.

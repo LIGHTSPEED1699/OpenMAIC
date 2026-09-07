@@ -107,6 +107,14 @@ export type AppScene = DslScene<Action, SceneContent> & {
    * scene-derived outline.
    */
   outlineId?: string;
+
+  /**
+   * Optional scene-level narration audio (relative /api/classroom-media/... path).
+   * Played once as voiceover when the scene starts, independent of per-line
+   * speech actions. Absent when a scene has no narration. App-layer annotation
+   * only — not part of the `@openmaic/dsl` Scene contract.
+   */
+  narrationUrl?: string;
 };
 export type Scene = AppScene;
 

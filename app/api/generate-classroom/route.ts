@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
         ? { enableVideoGeneration: rawBody.enableVideoGeneration }
         : {}),
       ...(rawBody.enableTTS != null ? { enableTTS: rawBody.enableTTS } : {}),
+      ...(rawBody.enableNarration != null ? { enableNarration: rawBody.enableNarration } : {}),
       ...(rawBody.agentMode ? { agentMode: rawBody.agentMode } : {}),
     };
     const { requirement } = body;

@@ -39,6 +39,7 @@ Only send supported content fields:
 - optional `enableImageGeneration` (boolean) — allow image generation metadata in outlines
 - optional `enableVideoGeneration` (boolean) — allow video generation metadata in outlines
 - optional `enableTTS` (boolean) — enable server-side TTS audio generation for speech actions
+- optional `enableNarration` (boolean) — after generation, synthesize per-scene M4B narration via the local **Abogen** service and wire it in as scene-level `narrationUrl` (see "Narration Wiring" below). Best-effort: a down Abogen or a script failure logs a warning and does not fail the job.
 - optional `agentMode` (`"default"` | `"generate"`) — controls agent profile strategy:
   - `"default"` (or omitted): uses built-in default agents
   - `"generate"`: uses LLM to generate custom agent profiles tailored to the course content
@@ -163,6 +164,107 @@ If the job fails, return the job ID plus the server error.
 If generation fails, surface the server error directly instead of paraphrasing it away.
 
 If the error suggests a provider or model configuration problem, explicitly tell the user to update `.env.local` or `server-providers.yml` instead of attempting a runtime override.
+
+## Narration Wiring (Abogen audio)
+
+OpenMAIC's built-in TTS is often disabled (health shows `"tts": false`). To give a
+generated classroom voiceover, generate per-scene audio with the local **Abogen**
+service (Kokoro TTS, `http://localhost:8808`) and wire it in as scene-level
+narration.
+
+### Automatic (recommended)
+
+Set `enableNarration: true` in the generation request. After the classroom is
+persisted, the server runs `~/.local/bin/narration_pipeline.py <classroomId>
+<classroomsDir>` which extracts each scene's speech text, synthesizes one M4B per
+scene via Abogen, copies it into the classroom media dir, stamps
+`scenes[i].narrationUrl`, and re-persists the JSON. The job reports
+`generating_narration` at 99% while this runs, and only reports `succeeded` once
+narration is wired. Best-effort: a down Abogen or script failure logs a warning
+and the job still succeeds (without narration).
+
+### Manual (fallback)
+
+If `enableNarration` is not available (older codebase) or you want to wire
+pre-generated M4Bs:
+
+1. **Extract scene scripts.** Each scene's speech text lives in the classroom
+   JSON at `data/classrooms/<id>.json` under `scenes[].actions[]` where
+   `type === 'speech'`. Write one `.txt` per scene (concatenate its speech
+   actions) into a scratch dir, e.g. `~/scratch/scene-audio/`.
+
+2. **Generate audio via Abogen.** Use `~/.local/bin/abogen_scenes.py` (or the
+   `abogen` skill's `/wizard/text` → `/wizard/finish` flow) to produce one M4B
+   per scene. Default voice `bm_george` (British male, good for technical math).
+   Output lands under `<ABOGEN_OUTPUT_DIR>/<job>/<name>.m4b` (env-configurable).
+
+3. **Wire narration into the classroom.** Run `~/.local/bin/wire_narration.py`
+   (edit `CLASSROOM_ID` / `AUDIO_DIR` at the top). It copies each scene's M4B
+   into the classroom media dir and stamps `scenes[i].narrationUrl` with the
+   relative `/api/classroom-media/<id>/media/scene-NN.m4b` path, then rewrites
+   the JSON. It backs up the JSON to `<your backup dir>/openmaic-classrooms/`
+   first.
+
+4. **Rebuild + restart.** `cd ~/OpenMAIC && pnpm build` (or `npm run build`),
+   then `systemctl --user restart openmaic.service`.
+
+### CRITICAL: the build wipes classroom data
+
+`next build` regenerates `.next/` and **deletes
+`.next/standalone/data/classrooms/`** — the stored classroom JSON and its media
+are lost. This is the #1 gotcha. Always:
+
+- Back up `data/classrooms/<id>.json` (and `media/`) to
+  `<your backup dir>/openmaic-classrooms/` **before** any rebuild.
+- After a rebuild, restore the JSON from backup, then re-run `wire_narration.py`
+  (it re-copies the M4Bs from the source audio dir, so it's idempotent).
+
+### Verify
+
+- `curl -s -o /dev/null -w "%{http_code} %{content_type}" \
+  http://localhost:3000/api/classroom-media/<id>/media/scene-01.m4b` → `200 audio/mp4`.
+- Open the classroom, start playback: each scene's M4B plays as voiceover on a
+  dedicated element (separate from per-line speech). Speech text still shows and
+  advances on the reading timer.
+
+### CRITICAL: incomplete M4B (silent narration) — the #2 gotcha
+
+Abogen encodes with `ffmpeg -movflags +faststart`, so the `moov` atom is written
+**last**. If the pipeline copies the `.m4b` the moment the file *appears*, it
+copies a mid-write, truncated file that has NO `moov` atom. Browsers cannot
+decode an M4A/AAC stream without `moov`, so the classroom is **silent on every
+machine** (server and clients alike) even though:
+- the stream returns `200`
+- `Content-Length` is present
+- `file` reports `ISO Media, Apple iTunes ALAC/AAC-LC (.M4A) Audio`
+- `ffprobe` fails with `moov atom not found`
+
+`narration_pipeline.py::wait_for_m4b` MUST wait for a **complete** M4B:
+`moov` present in the file head AND size stable across a short window, before
+`shutil.copy2`. The classroom copies must have `moov` — verify with
+`python3 -c "d=open('...scene-01.m4b','rb').read(); print(d.find(b'moov'))"`
+(must be `>= 0`). A valid copy is ~1.5MB+ (the old corrupt ones were 256KB with
+only `ftyp`+`mdat`). If narration is already wired but silent, re-run the
+pipeline (it's idempotent — re-copies valid M4Bs).
+
+### CRITICAL: browser caches the corrupt M4B (silent on clients, works on server)
+
+The media route previously sent `Cache-Control: public, max-age=86400, immutable`.
+Because the narration URL is stable (`/api/classroom-media/<id>/media/scene-NN.m4b`),
+a client that fetched the OLD corrupt file cached it under that URL and, with
+`immutable`, never revalidated — so it kept playing the stale silent bytes even
+after the file was fixed. The server (ryzen9) played fine because it fetched
+fresh; LAN clients stayed silent with the play icon showing.
+
+Fix: the media route must send `Cache-Control: no-store` (never cache — the
+files are small and rewritten in place). After changing it, rebuild + restart.
+Clients that already cached the corrupt file must hard-refresh (Ctrl+Shift+R)
+once to drop it.
+
+### Known ceiling
+
+Scene narration is fire-and-forget: it plays once at scene start and does not
+pause/resume with the playback controls. Add pause/resume sync if that matters.
 
 ## Confirmation Requirements
 
