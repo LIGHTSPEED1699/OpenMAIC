@@ -29,7 +29,7 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
-import { persistClassroom } from '@/lib/server/classroom-storage';
+import { CLASSROOMS_DIR, persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
@@ -739,12 +739,14 @@ export async function generateClassroom(
     try {
       const execFileAsync = promisify(execFile);
       // Narration is delegated to a Python script that talks to the local
-      // Abogen service. The script + storage dir are configurable via env so
-      // this works outside this repo (see scripts/narration_pipeline.py).
+      // Abogen service. The script is configurable via env so this works
+      // outside this repo (see scripts/narration_pipeline.py). The classroom
+      // dir must be the SAME location classroom-storage persists to — read
+      // the exported CLASSROOMS_DIR (which honors CLASSROOMS_DATA_DIR) instead
+      // of re-deriving from a differently-named env var.
       const scriptPath = process.env.NARRATION_PIPELINE_SCRIPT
         ?? path.join(process.cwd(), 'scripts', 'narration_pipeline.py');
-      const classroomsDir = process.env.CLASSROOMS_DIR
-        ?? path.join(process.cwd(), 'data', 'classrooms');
+      const classroomsDir = CLASSROOMS_DIR;
       const { stdout, stderr } = await execFileAsync(
         'python3',
         [scriptPath, persisted.id, classroomsDir],

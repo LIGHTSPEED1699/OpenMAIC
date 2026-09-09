@@ -168,20 +168,21 @@ If the error suggests a provider or model configuration problem, explicitly tell
 ## Narration Wiring (Abogen audio)
 
 OpenMAIC's built-in TTS is often disabled (health shows `"tts": false`). To give a
-generated classroom voiceover, generate per-scene audio with the local **Abogen**
-service (Kokoro TTS, `http://localhost:8808`) and wire it in as scene-level
+generated classroom voiceover, generate per-scene audio with a local **Abogen**
+service (Kokoro TTS, e.g. `http://localhost:8808`) and wire it in as scene-level
 narration.
 
 ### Automatic (recommended)
 
 Set `enableNarration: true` in the generation request. After the classroom is
-persisted, the server runs `~/.local/bin/narration_pipeline.py <classroomId>
-<classroomsDir>` which extracts each scene's speech text, synthesizes one M4B per
-scene via Abogen, copies it into the classroom media dir, stamps
-`scenes[i].narrationUrl`, and re-persists the JSON. The job reports
-`generating_narration` at 99% while this runs, and only reports `succeeded` once
-narration is wired. Best-effort: a down Abogen or script failure logs a warning
-and the job still succeeds (without narration).
+persisted, the server runs the repo's narration script
+(`scripts/narration_pipeline.py <classroomId> <classroomsDir>` — path
+overridable via `NARRATION_PIPELINE_SCRIPT`) which extracts each scene's speech
+text, synthesizes one M4B per scene via Abogen, copies it into the classroom
+media dir, stamps `scenes[i].narrationUrl`, and re-persists the JSON. The job
+reports `generating_narration` at 99% while this runs, and only reports
+`succeeded` once narration is wired. Best-effort: a down Abogen or script
+failure logs a warning and the job still succeeds (without narration).
 
 ### Manual (fallback)
 
@@ -189,35 +190,30 @@ If `enableNarration` is not available (older codebase) or you want to wire
 pre-generated M4Bs:
 
 1. **Extract scene scripts.** Each scene's speech text lives in the classroom
-   JSON at `data/classrooms/<id>.json` under `scenes[].actions[]` where
+   JSON at `<classroomsDir>/<id>.json` under `scenes[].actions[]` where
    `type === 'speech'`. Write one `.txt` per scene (concatenate its speech
-   actions) into a scratch dir, e.g. `~/scratch/scene-audio/`.
+   actions) into a scratch dir.
 
-2. **Generate audio via Abogen.** Use `~/.local/bin/abogen_scenes.py` (or the
-   `abogen` skill's `/wizard/text` → `/wizard/finish` flow) to produce one M4B
-   per scene. Default voice `bm_george` (British male, good for technical math).
-   Output lands under `<ABOGEN_OUTPUT_DIR>/<job>/<name>.m4b` (env-configurable).
+2. **Generate audio via Abogen.** Use the Abogen `/wizard/text` →
+   `/wizard/finish` flow to produce one M4B per scene (the pipeline script
+   shows the exact request shape). Default voice `bm_george` (British male,
+   good for technical math). Output lands under Abogen's configured output
+   dir.
 
-3. **Wire narration into the classroom.** Run `~/.local/bin/wire_narration.py`
-   (edit `CLASSROOM_ID` / `AUDIO_DIR` at the top). It copies each scene's M4B
-   into the classroom media dir and stamps `scenes[i].narrationUrl` with the
-   relative `/api/classroom-media/<id>/media/scene-NN.m4b` path, then rewrites
-   the JSON. It backs up the JSON to `<your backup dir>/openmaic-classrooms/`
-   first.
+3. **Wire narration into the classroom.** `scripts/narration_pipeline.py` does
+   this end to end; to wire pre-generated files instead, copy each M4B into the
+   classroom media dir and stamp `scenes[i].narrationUrl` with the relative
+   `/api/classroom-media/<id>/media/scene-NN.m4b` path, then rewrite the JSON.
 
-4. **Rebuild + restart.** `cd ~/OpenMAIC && pnpm build` (or `npm run build`),
-   then `systemctl --user restart openmaic.service`.
+4. **Rebuild + restart.** `cd <repo> && pnpm build` (or `npm run build`), then
+   restart the server process.
 
 ### CRITICAL: the build wipes classroom data
 
-`next build` regenerates `.next/` and **deletes
-`.next/standalone/data/classrooms/`** — the stored classroom JSON and its media
-are lost. This is the #1 gotcha. Always:
-
-- Back up `data/classrooms/<id>.json` (and `media/`) to
-  `<your backup dir>/openmaic-classrooms/` **before** any rebuild.
-- After a rebuild, restore the JSON from backup, then re-run `wire_narration.py`
-  (it re-copies the M4Bs from the source audio dir, so it's idempotent).
+`next build` regenerates `.next/` and **deletes** the stored classroom JSON and
+media that live under `.next/standalone/` when serving from the standalone
+build. If your deployment keeps classroom data inside the build output, back up
+the classroom JSON (and `media/`) before any rebuild and restore it after.
 
 ### Verify
 
@@ -239,32 +235,30 @@ machine** (server and clients alike) even though:
 - `file` reports `ISO Media, Apple iTunes ALAC/AAC-LC (.M4A) Audio`
 - `ffprobe` fails with `moov atom not found`
 
-`narration_pipeline.py::wait_for_m4b` MUST wait for a **complete** M4B:
-`moov` present in the file head AND size stable across a short window, before
-`shutil.copy2`. The classroom copies must have `moov` — verify with
-`python3 -c "d=open('...scene-01.m4b','rb').read(); print(d.find(b'moov'))"`
-(must be `>= 0`). A valid copy is ~1.5MB+ (the old corrupt ones were 256KB with
-only `ftyp`+`mdat`). If narration is already wired but silent, re-run the
-pipeline (it's idempotent — re-copies valid M4Bs).
+The pipeline downloads each scene's finished audio from the job-scoped endpoint
+(`GET /jobs/<id>/download/audio`, only served once the Abogen job is
+COMPLETED), which guarantees a fully-encoded file, and additionally checks for
+`moov` in the bytes before stamping the narration URL. If narration is already
+wired but silent, re-run the pipeline (it's idempotent — re-downloads valid
+M4Bs).
 
 ### CRITICAL: browser caches the corrupt M4B (silent on clients, works on server)
 
-The media route previously sent `Cache-Control: public, max-age=86400, immutable`.
 Because the narration URL is stable (`/api/classroom-media/<id>/media/scene-NN.m4b`),
-a client that fetched the OLD corrupt file cached it under that URL and, with
-`immutable`, never revalidated — so it kept playing the stale silent bytes even
-after the file was fixed. The server (ryzen9) played fine because it fetched
-fresh; LAN clients stayed silent with the play icon showing.
-
-Fix: the media route must send `Cache-Control: no-store` (never cache — the
-files are small and rewritten in place). After changing it, rebuild + restart.
-Clients that already cached the corrupt file must hard-refresh (Ctrl+Shift+R)
+a client that fetched a corrupt file could cache it under that URL and keep
+playing the stale silent bytes. The media route therefore sends
+`Cache-Control: no-store` for narration files (`.m4a`/`.m4b`) so they are never
+cached; immutable media (images, videos) keeps long-lived cache headers.
+Clients that already cached a corrupt file must hard-refresh (Ctrl+Shift+R)
 once to drop it.
 
-### Known ceiling
+### Combination with per-line TTS
 
-Scene narration is fire-and-forget: it plays once at scene start and does not
-pause/resume with the playback controls. Add pause/resume sync if that matters.
+Narration is scene-level voiceover that plays in addition to the action loop. If
+`enableTTS` is also enabled, the per-line speech audio and the scene narration
+play at the same time. They are designed to be alternatives: enable
+`enableNarration` for voiceover (TTS off), or keep `enableTTS` for per-line
+speech (narration off).
 
 ## Confirmation Requirements
 

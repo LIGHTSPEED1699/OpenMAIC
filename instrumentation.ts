@@ -28,6 +28,18 @@ export async function register(): Promise<void> {
   const { validateServerConfig } = await import('@/lib/server/config-validation');
   validateServerConfig();
 
+  // Migrate any legacy classroom data once per boot, behind a completion
+  // marker. Fire-and-forget: register() must not block on I/O, and the marker
+  // makes this idempotent across restarts.
+  try {
+    const { migrateLegacyClassroomData } = await import('@/lib/server/classroom-storage');
+    void migrateLegacyClassroomData().catch((err) => {
+      console.warn('[classroom-storage] legacy migration failed:', err);
+    });
+  } catch (err) {
+    console.warn('[classroom-storage] legacy migration not started:', err);
+  }
+
   let runner: import('@/lib/server/agent-runtime/runner').AgentRunnerHandle | undefined;
   let extractionRunner:
     | import('@/lib/server/material-extraction/runner').MaterialExtractionRunnerHandle

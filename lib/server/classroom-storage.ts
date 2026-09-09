@@ -19,6 +19,9 @@ export const CLASSROOM_JOBS_DIR = path.join(STORAGE_ROOT, 'classroom-jobs');
 const LEGACY_CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
 const LEGACY_CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
 
+/** Marker file: written once after the first successful legacy migration. */
+const LEGACY_MIGRATION_MARKER = '.legacy-migration-complete';
+
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
 }
@@ -40,6 +43,15 @@ async function copyDirRecursive(src: string, dest: string) {
     if (entry.isDirectory()) {
       await copyDirRecursive(s, d);
     } else {
+      // Never overwrite a newer destination: after a storage move, a classroom
+      // regenerated into the new location must not be reverted by the stale
+      // legacy copy on the next migration pass.
+      try {
+        const [srcStat, dstStat] = await Promise.all([fs.stat(s), fs.stat(d)]);
+        if (dstStat.mtimeMs >= srcStat.mtimeMs) continue;
+      } catch {
+        // Destination missing (or stat raced) — fall through to the copy.
+      }
       await fs.copyFile(s, d);
     }
   }
@@ -47,17 +59,34 @@ async function copyDirRecursive(src: string, dest: string) {
 
 /**
  * Migrate any legacy classroom data into the current storage location.
- * Idempotent and non-destructive: copies (never deletes) legacy JSON + media
- * subdirectories into CLASSROOMS_DIR / CLASSROOM_JOBS_DIR. Safe to call on
- * every startup — it no-ops when no legacy data exists.
+ * Runs at most once per storage root (guarded by a marker file), copies (never
+ * deletes) legacy JSON + media subdirectories into CLASSROOMS_DIR /
+ * CLASSROOM_JOBS_DIR, and never overwrites a newer destination file. In the
+ * default same-path configuration it no-ops entirely (source === destination,
+ * where fs.copyFile is platform-dependent).
  */
 export async function migrateLegacyClassroomData(): Promise<void> {
-  if (await dirExists(LEGACY_CLASSROOMS_DIR)) {
-    await copyDirRecursive(LEGACY_CLASSROOMS_DIR, CLASSROOMS_DIR);
+  await ensureDir(STORAGE_ROOT);
+  const marker = path.join(STORAGE_ROOT, LEGACY_MIGRATION_MARKER);
+  try {
+    await fs.access(marker);
+    return; // Already migrated once — never rescan on every read.
+  } catch {
+    // No marker yet — first pass.
   }
-  if (await dirExists(LEGACY_CLASSROOM_JOBS_DIR)) {
-    await copyDirRecursive(LEGACY_CLASSROOM_JOBS_DIR, CLASSROOM_JOBS_DIR);
+
+  if (path.resolve(LEGACY_CLASSROOMS_DIR) !== path.resolve(CLASSROOMS_DIR)) {
+    if (await dirExists(LEGACY_CLASSROOMS_DIR)) {
+      await copyDirRecursive(LEGACY_CLASSROOMS_DIR, CLASSROOMS_DIR);
+    }
   }
+  if (path.resolve(LEGACY_CLASSROOM_JOBS_DIR) !== path.resolve(CLASSROOM_JOBS_DIR)) {
+    if (await dirExists(LEGACY_CLASSROOM_JOBS_DIR)) {
+      await copyDirRecursive(LEGACY_CLASSROOM_JOBS_DIR, CLASSROOM_JOBS_DIR);
+    }
+  }
+
+  await fs.writeFile(marker, new Date().toISOString(), 'utf-8');
 }
 
 export async function ensureClassroomsDir() {
@@ -98,7 +127,6 @@ export function isValidClassroomId(id: string): boolean {
 }
 
 export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
-  await migrateLegacyClassroomData();
   const filePath = path.join(CLASSROOMS_DIR, `${id}.json`);
   try {
     const content = await fs.readFile(filePath, 'utf-8');

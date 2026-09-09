@@ -195,19 +195,16 @@ export function CanvasToolbar({
             >
               <button
                 onClick={onToggleMute}
-                disabled={!ttsEnabled}
                 className={cn(
                   ctrlBtn,
                   'w-6 h-6',
-                  !ttsEnabled
-                    ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                    : ttsMuted
-                      ? 'text-red-500 dark:text-red-400'
-                      : 'text-gray-500 dark:text-gray-400',
+                  ttsMuted
+                    ? 'text-red-500 dark:text-red-400'
+                    : 'text-gray-500 dark:text-gray-400',
                 )}
                 aria-label={ttsMuted ? 'Unmute' : 'Mute'}
               >
-                <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={!ttsEnabled} />
+                <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={false} />
               </button>
 
               {/* Vertical volume slider (pops up above) */}

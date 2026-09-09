@@ -225,7 +225,7 @@ export class PlaybackEngine {
   pause(): void {
     if (this.mode === 'playing') {
       this.invalidatePlaybackGeneration();
-      this.stopSceneNarration();
+      this.pauseSceneNarration();
       // Cancel pending timers
       if (this.triggerDelayTimer) {
         clearTimeout(this.triggerDelayTimer);
@@ -281,6 +281,8 @@ export class PlaybackEngine {
     } else {
       // Resume lecture
       this.setMode('playing');
+      // Scene-level narration was paused in place — resume from currentTime.
+      this.resumeSceneNarration();
       if (this.browserTTSPausedChunks.length > 0) {
         // Browser TTS was paused via cancel — re-speak remaining chunks
         this.browserTTSActive = true;
@@ -553,18 +555,43 @@ export class PlaybackEngine {
 
   /**
    * Play scene-level narration voiceover (if the scene has one) on a dedicated
-   * element. Fire-and-forget: it does not gate the action loop, and it is
-   * stopped when playback pauses/stops or the scene changes.
+   * element. Fire-and-forget: it does not gate the action loop. It pauses with
+   * playback (resuming from currentTime on resume) and is discarded on stop or
+   * when the scene changes.
    */
   private playSceneNarration(scene: Scene): void {
     this.stopSceneNarration();
     const url = scene.narrationUrl;
     if (!url || typeof window === 'undefined') return;
     const el = new Audio(url);
+    // Respect the shared mute state so the sound/mute button also silences
+    // scene-level narration (not just per-line TTS speech).
+    el.volume = this.audioPlayer.getMuted() ? 0 : 1;
     el.play().catch(() => {
       // Autoplay policy or decode error — narration is best-effort, ignore.
     });
     this.narrationAudio = el;
+  }
+
+  /** Sync scene-level narration volume to the current mute state (live toggle). */
+  public setNarrationMuted(muted: boolean): void {
+    if (this.narrationAudio) {
+      this.narrationAudio.volume = muted ? 0 : 1;
+    }
+  }
+
+  /** Pause scene narration in place (keeps currentTime so resume can restart). */
+  private pauseSceneNarration(): void {
+    this.narrationAudio?.pause();
+  }
+
+  /** Resume scene narration from where it was paused, if one is loaded. */
+  private resumeSceneNarration(): void {
+    if (this.narrationAudio) {
+      this.narrationAudio.play().catch(() => {
+        // Autoplay policy or decode error — narration is best-effort, ignore.
+      });
+    }
   }
 
   private stopSceneNarration(): void {

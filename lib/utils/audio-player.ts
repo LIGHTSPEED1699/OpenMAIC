@@ -265,6 +265,11 @@ export class AudioPlayer {
     }
   }
 
+  /** Current mute state (used to sync scene-level narration volume). */
+  public getMuted(): boolean {
+    return this.muted;
+  }
+
   /**
    * Set volume (0-1)
    */

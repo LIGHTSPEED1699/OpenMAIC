@@ -923,6 +923,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // Sync mute state from settings store to audioPlayer
     useEffect(() => {
       audioPlayerRef.current.setMuted(ttsMuted);
+      // Also silence scene-level narration (separate element) so the
+      // sound/mute button controls it too.
+      engineRef.current?.setNarrationMuted(ttsMuted);
     }, [ttsMuted]);
 
     // Sync volume from settings store to audioPlayer

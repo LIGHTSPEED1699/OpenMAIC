@@ -63,6 +63,15 @@ export async function GET(
     const ext = path.extname(realPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
+    // Narration files are rewritten in place under a stable URL, so they must
+    // never be cached (a stale fetch would keep silent bytes). Immutable media
+    // (images, videos, other audio) is written once at generation time and can
+    // keep long-lived cache headers.
+    const isNarration = ext === '.m4a' || ext === '.m4b';
+    const cacheControl = isNarration
+      ? 'no-store'
+      : 'public, max-age=86400, immutable';
+
     // Stream the file to avoid loading large videos into memory
     const stream = createReadStream(realPath);
     const webStream = new ReadableStream({
@@ -81,7 +90,7 @@ export async function GET(
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(stat.size),
-        'Cache-Control': 'no-store',
+        'Cache-Control': cacheControl,
       },
     });
   } catch (error) {

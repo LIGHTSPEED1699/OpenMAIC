@@ -14,7 +14,7 @@ Configuration (all optional):
 Usage:
   narration_pipeline.py <classroomId> <classroomsDir>
 """
-import glob, json, os, shutil, sys, time
+import json, os, sys, time
 import requests
 
 ABOGEN = os.environ.get("ABOGEN_URL", "http://localhost:8808")
@@ -92,44 +92,34 @@ def finish_job(s, pending_id):
     return r.json().get("job_id", "?")
 
 
-def newest_m4b():
-    cands = glob.glob(os.path.join(ABOGEN_OUT, "*", "*.m4b"))
-    return max(cands, key=os.path.getmtime) if cands else None
+def has_moov(data):
+    return b"moov" in data[:4096]
 
 
-def is_complete_m4b(path, min_stable_checks=2, stability_s=3.0):
-    """True only when the M4B has a moov atom and its size is stable.
+def wait_for_job_audio(s, job_id, dest, timeout_s=900):
+    """Download the finished M4B for this job by id.
 
-    Abogen encodes with ffmpeg -movflags +faststart, so the moov atom is
-    written LAST. A file that appears on disk mid-encode has no moov (or a
-    placeholder) and grows in size; copying it yields an unplayable clip.
-    This is the root-cause fix for silent narration.
+    Polls the job-scoped download endpoint (GET /jobs/<id>/download/audio),
+    which Abogen only serves once the job is COMPLETED, so the audio is fully
+    encoded and playable. Correlating by job id (rather than scavenging the
+    newest file in the shared output dir) makes the pipeline immune to any
+    concurrent Abogen job. The moov check is belt-and-braces on the bytes we
+    actually copy.
     """
-    try:
-        with open(path, "rb") as f:
-            head = f.read(64)
-        if b"moov" not in head:
-            return False
-    except OSError:
-        return False
-    # size stable across a short window
-    sz0 = os.path.getsize(path)
-    time.sleep(stability_s)
-    sz1 = os.path.getsize(path)
-    if sz0 != sz1:
-        return False
-    return is_complete_m4b(path, min_stable_checks - 1, 0.5) if min_stable_checks > 0 else True
-
-
-def wait_for_m4b(before, timeout_s=900):
-    """Wait for a NEW, COMPLETE M4B (moov present, size stable)."""
+    url = ABOGEN + f"/jobs/{job_id}/download/audio"
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        cur = newest_m4b()
-        if cur and cur != before and is_complete_m4b(cur):
-            return cur
+        r = s.get(url, timeout=30)
+        if r.status_code == 200 and r.content and has_moov(r.content):
+            tmp = dest + ".part"
+            with open(tmp, "wb") as f:
+                f.write(r.content)
+            os.replace(tmp, dest)
+            return dest
+        if r.status_code not in (200, 404):
+            raise RuntimeError(f"job download failed: HTTP {r.status_code}: {r.text[:200]}")
         time.sleep(5)
-    raise TimeoutError("no complete m4b produced")
+    raise TimeoutError(f"no complete m4b for job {job_id}")
 
 
 def main():
@@ -155,15 +145,13 @@ def main():
         if not text:
             continue
         title = f"scene-{i+1:02d}"
-        before = newest_m4b()
         pend = upload_text(s, text, title)
-        finish_job(s, pend)
-        m4b = wait_for_m4b(before)
+        job_id = finish_job(s, pend)
         dest = os.path.join(media_dir, f"scene-{i+1:02d}.m4b")
-        shutil.copy2(m4b, dest)
+        wait_for_job_audio(s, job_id, dest)
         scene["narrationUrl"] = f"/api/classroom-media/{cid}/media/scene-{i+1:02d}.m4b"
         wired += 1
-        print(f"wired scene {i+1}: {m4b}")
+        print(f"wired scene {i+1}: {job_id} -> {dest}")
 
     with open(cf, "w") as f:
         json.dump(data, f, indent=2)
