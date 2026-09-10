@@ -132,4 +132,43 @@ describe('migrateLegacyClassroomData', () => {
       await readFile(path.join(PROJECT, 'data', '.legacy-migration-complete')),
     ).not.toBeNull();
   });
+
+  test('a copy that dies mid-write leaves no partial destination behind', async () => {
+    // Review finding: copyFile wrote destinations in place, so a crash mid-copy
+    // left a truncated file whose fresh mtime beat the legacy source. The next
+    // pass skipped it via the mtime guard and the completion marker froze the
+    // partial bytes in place permanently. Copying via temp + rename means the
+    // destination is only ever absent or complete.
+    await writeFile(
+      path.join(legacyClassrooms(), 'abc.json'),
+      '{"legacy":true}',
+      Date.now(),
+    );
+
+    const { migrateLegacyClassroomData, CLASSROOMS_DIR } = await import(
+      '@/lib/server/classroom-storage'
+    );
+
+    // Simulate the crash: bytes land, then the write throws (disk full).
+    const spy = vi
+      .spyOn(fs, 'copyFile')
+      .mockImplementation(async (_src: fsSync.PathLike, dest: fsSync.PathLike) => {
+        await fs.writeFile(dest, '{"legacy":'); // truncated
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      });
+
+    await expect(migrateLegacyClassroomData()).rejects.toThrow('ENOSPC');
+    spy.mockRestore();
+
+    // No truncated destination and no temp litter, and the marker was NOT
+    // written — so the next boot retries instead of freezing the partial file.
+    expect(await readFile(path.join(CLASSROOMS_DIR, 'abc.json'))).toBeNull();
+    expect((await fs.readdir(CLASSROOMS_DIR)).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(await readFile(path.join(CURRENT, '.legacy-migration-complete'))).toBeNull();
+
+    // The retry on the next pass completes the copy for real.
+    await migrateLegacyClassroomData();
+    expect(await readFile(path.join(CLASSROOMS_DIR, 'abc.json'))).toBe('{"legacy":true}');
+    expect(await readFile(path.join(CURRENT, '.legacy-migration-complete'))).not.toBeNull();
+  });
 });

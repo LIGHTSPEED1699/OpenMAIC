@@ -564,19 +564,27 @@ export class PlaybackEngine {
     const url = scene.narrationUrl;
     if (!url || typeof window === 'undefined') return;
     const el = new Audio(url);
-    // Respect the shared mute state so the sound/mute button also silences
-    // scene-level narration (not just per-line TTS speech).
-    el.volume = this.audioPlayer.getMuted() ? 0 : 1;
+    // Follow the shared player's mute/volume state so the sound controls apply
+    // to scene-level narration too (not just per-line TTS speech).
+    el.volume = this.narrationVolume();
     el.play().catch(() => {
       // Autoplay policy or decode error — narration is best-effort, ignore.
     });
     this.narrationAudio = el;
   }
 
-  /** Sync scene-level narration volume to the current mute state (live toggle). */
-  public setNarrationMuted(muted: boolean): void {
+  /** Volume scene narration plays at: the shared player's, or 0 when muted. */
+  private narrationVolume(): number {
+    return this.audioPlayer.getMuted() ? 0 : this.audioPlayer.getVolume();
+  }
+
+  /**
+   * Re-apply the shared player's mute/volume to the live narration element.
+   * Called when either changes so the controls affect narration in place.
+   */
+  public syncNarrationVolume(): void {
     if (this.narrationAudio) {
-      this.narrationAudio.volume = muted ? 0 : 1;
+      this.narrationAudio.volume = this.narrationVolume();
     }
   }
 

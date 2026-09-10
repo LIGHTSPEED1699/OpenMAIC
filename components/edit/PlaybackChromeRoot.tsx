@@ -925,7 +925,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       audioPlayerRef.current.setMuted(ttsMuted);
       // Also silence scene-level narration (separate element) so the
       // sound/mute button controls it too.
-      engineRef.current?.setNarrationMuted(ttsMuted);
+      engineRef.current?.syncNarrationVolume();
     }, [ttsMuted]);
 
     // Sync volume from settings store to audioPlayer
@@ -934,6 +934,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       if (!ttsMuted) {
         audioPlayerRef.current.setVolume(ttsVolume);
       }
+      // Narration follows the same volume, not a hardcoded 1.
+      engineRef.current?.syncNarrationVolume();
     }, [ttsVolume, ttsMuted]);
 
     // Sync playback speed to audio player (for live-updating current audio)

@@ -96,6 +96,26 @@ def has_moov(data):
     return b"moov" in data[:4096]
 
 
+def job_is_dead(s, job_id):
+    """True when Abogen says this job is gone or terminally failed.
+
+    /jobs/<id>/download/audio answers 404 both while a job is still running and
+    when it will never produce audio, so a 404 alone cannot be acted on. The job
+    page distinguishes them: unknown jobs render "Job Not Found" (Abogen answers
+    200 there, not 404, to spare stale browser tabs) and finished ones carry a
+    failed/cancelled status badge.
+    """
+    r = s.get(f"{ABOGEN}/jobs/{job_id}", timeout=30)
+    if r.status_code != 200:
+        return False
+    body = r.text
+    return (
+        "Job Not Found" in body
+        or "badge--failed" in body
+        or "badge--cancelled" in body
+    )
+
+
 def wait_for_job_audio(s, job_id, dest, timeout_s=900):
     """Download the finished M4B for this job by id.
 
@@ -104,7 +124,8 @@ def wait_for_job_audio(s, job_id, dest, timeout_s=900):
     encoded and playable. Correlating by job id (rather than scavenging the
     newest file in the shared output dir) makes the pipeline immune to any
     concurrent Abogen job. The moov check is belt-and-braces on the bytes we
-    actually copy.
+    actually copy. A job that Abogen reports dead fails immediately instead of
+    burning the whole timeout.
     """
     url = ABOGEN + f"/jobs/{job_id}/download/audio"
     deadline = time.time() + timeout_s
@@ -116,7 +137,10 @@ def wait_for_job_audio(s, job_id, dest, timeout_s=900):
                 f.write(r.content)
             os.replace(tmp, dest)
             return dest
-        if r.status_code not in (200, 404):
+        if r.status_code == 404:
+            if job_is_dead(s, job_id):
+                raise RuntimeError(f"abogen job {job_id} is gone or failed")
+        elif r.status_code != 200:
             raise RuntimeError(f"job download failed: HTTP {r.status_code}: {r.text[:200]}")
         time.sleep(5)
     raise TimeoutError(f"no complete m4b for job {job_id}")

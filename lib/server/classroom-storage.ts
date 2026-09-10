@@ -34,6 +34,28 @@ async function dirExists(dir: string): Promise<boolean> {
   }
 }
 
+/**
+ * Copy `src` over `dest` atomically: write a sibling temp file, then rename.
+ *
+ * A copy that dies mid-write (disk full, crash, kill) must never leave a
+ * truncated file at `dest`: the destination's fresh mtime would beat the legacy
+ * source on the next pass, the mtime guard would skip the retry, and the
+ * completion marker would freeze the partial bytes in place forever. Writing
+ * to a temp name and renaming means `dest` is either absent or complete.
+ */
+async function copyFileAtomic(src: string, dest: string) {
+  const temp = `${dest}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.copyFile(src, temp);
+    await fs.rename(temp, dest);
+  } catch (err) {
+    await fs.rm(temp, { force: true }).catch(() => {
+      // Best-effort cleanup — the copy error is the one worth surfacing.
+    });
+    throw err;
+  }
+}
+
 async function copyDirRecursive(src: string, dest: string) {
   await ensureDir(dest);
   const entries = await fs.readdir(src, { withFileTypes: true });
@@ -52,7 +74,7 @@ async function copyDirRecursive(src: string, dest: string) {
       } catch {
         // Destination missing (or stat raced) — fall through to the copy.
       }
-      await fs.copyFile(s, d);
+      await copyFileAtomic(s, d);
     }
   }
 }

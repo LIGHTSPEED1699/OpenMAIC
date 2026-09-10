@@ -270,6 +270,11 @@ export class AudioPlayer {
     return this.muted;
   }
 
+  /** Current volume (used to sync scene-level narration volume). */
+  public getVolume(): number {
+    return this.volume;
+  }
+
   /**
    * Set volume (0-1)
    */
