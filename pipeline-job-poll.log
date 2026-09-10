@@ -1,0 +1,25 @@
+poll error: <urlopen error [Errno -2] Name or service not known>
+poll error: <urlopen error [Errno -2] Name or service not known>
+poll error: <urlopen error [Errno -2] Name or service not known>
+[07:59:16] status=running step=generating_narration progress=99 scenes=3/3 :: Generating Abogen narration audio
+[08:00:31] status=succeeded step=completed progress=100 scenes=3/3 :: Classroom generation completed
+--- final job record ---
+{
+  "success": true,
+  "jobId": "jZob1kfr67",
+  "status": "succeeded",
+  "step": "completed",
+  "progress": 100,
+  "message": "Classroom generation completed",
+  "pollUrl": "http://127.0.0.1:3001/api/generate-classroom/jZob1kfr67",
+  "pollIntervalMs": 5000,
+  "scenesGenerated": 3,
+  "totalScenes": 3,
+  "result": {
+    "classroomId": "R1tJBM1l0T",
+    "url": "http://localhost:3001/classroom/R1tJBM1l0T",
+    "scenesCount": 3
+  },
+  "done": true
+}
+POLL_DONE status=succeeded

@@ -1,0 +1,8 @@
+[play-clicked] {}
+[playing] {"src":"http://127.0.0.1:3001/api/classroom-media/R1tJBM1l0T/media/scene-01.m4b","currentTime_t1":0.694748,"currentTime_t2":3.194149,"advanced":true,"duration":120.3,"volume":1,"readyState":4}
+[muted] {"volume":0,"paused":false,"stillAdvancing":true}
+[unmuted] {"volume":1}
+[paused] {"before":5.67536,"after":5.725984,"paused":true,"heldAtCurrentTime":true}
+[resumed] {"paused":false,"resumedFrom":7.760363,"didNotRestart":true}
+[narration-network] {"responses":[{"url":"http://127.0.0.1:3001/api/classroom-media/R1tJBM1l0T/media/scene-01.m4b","status":200,"contentType":"audio/mp4","cacheControl":"no-store","contentLength":"1679651"}]}
+[console-errors] {"errors":["Failed to load resource: the server responded with a status of 404 (Not Found)"]}

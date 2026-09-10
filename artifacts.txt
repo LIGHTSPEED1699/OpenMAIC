@@ -1,0 +1,25 @@
+== generated classroom: R1tJBM1l0T (Ohm's Law: V, I, and R) ==
+stage.name: Ohm's Law: V, I, and R
+scene 1: type=slide, speech actions=9, narrationUrl=/api/classroom-media/R1tJBM1l0T/media/scene-01.m4b
+scene 2: type=interactive, speech actions=2, narrationUrl=/api/classroom-media/R1tJBM1l0T/media/scene-02.m4b
+scene 3: type=quiz, speech actions=2, narrationUrl=/api/classroom-media/R1tJBM1l0T/media/scene-03.m4b
+
+== narration files on disk ==
+scene-01.m4b: moov atom at byte 32 (inside first 4096) | format_name=mov,mp4,m4a,3gp,3g2,mj2 | duration=120.300000
+scene-02.m4b: moov atom at byte 32 (inside first 4096) | format_name=mov,mp4,m4a,3gp,3g2,mj2 | duration=42.575000
+scene-03.m4b: moov atom at byte 32 (inside first 4096) | format_name=mov,mp4,m4a,3gp,3g2,mj2 | duration=28.050000
+
+== served headers (GET /api/classroom-media/R1tJBM1l0T/media/scene-01.m4b) ==
+HTTP/1.1 200 OK
+X-Frame-Options: SAMEORIGIN
+Content-Security-Policy: frame-ancestors 'self'
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+cache-control: no-store
+content-length: 1679651
+content-type: audio/mp4
+Date: Thu, 10 Sep 2026 12:03:52 GMT
+
+== abogen jobs (correlated by job id returned from /wizard/finish) ==
+job a8606036d57843e58b958511d1aabbbe: badge--completed">Completed | GET /jobs/a8606036d57843e58b958511d1aabbbe/download/audio -> HTTP 200 1679651B
+job 25040a1d6998464d848a10273938173a: badge--completed">Completed | GET /jobs/25040a1d6998464d848a10273938173a/download/audio -> HTTP 200 590814B
+job 9cfadf2ea8d24ab5844e1e67387f13ca: badge--completed">Completed | GET /jobs/9cfadf2ea8d24ab5844e1e67387f13ca/download/audio -> HTTP 200 377240B

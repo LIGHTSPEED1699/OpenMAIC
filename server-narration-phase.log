@@ -1,0 +1,13 @@
+9:[2026-09-10T11:54:52.183Z] [INFO] [Classroom] Using server-configured model: deepseek:deepseek-v4-flash
+10:[2026-09-10T11:54:57.718Z] [INFO] [Classroom] Generated 3 scene outlines (languageDirective: Deliver the entire course in English (en-US). Use simple, clear vocabulary and short sentences appropriate for first-year beginners with no prior background in electronics. Keep all standard electrical terminology in English (voltage, current, resistance, ohm, ampere, volt) and show the SI units and symbols alongside each term. Scene narration should be brief — 2-3 spoken sentences per scene — with any extra detail placed on-screen rather than in speech., courseTitle: Ohm's Law: V, I, and R)
+11:[2026-09-10T11:54:57.722Z] [INFO] [Classroom] Stage 2: Generating scene content and actions...
+12:[2026-09-10T11:56:39.532Z] [INFO] [Classroom] Scene "Ohm's Law: Voltage, Current, Resistance": 17 actions
+13:[2026-09-10T11:58:53.194Z] [INFO] [Classroom] Scene "Explore V = I × R with Live Sliders": 8 actions
+14:[2026-09-10T11:59:02.014Z] [INFO] [Classroom] Scene "Quick Check: Using Ohm's Law": 2 actions
+15:[2026-09-10T11:59:02.084Z] [INFO] [Classroom] Pipeline complete: 3 scenes generated
+16:[2026-09-10T11:59:02.119Z] [INFO] [Classroom] Classroom persisted: R1tJBM1l0T, URL: http://localhost:3001/classroom/R1tJBM1l0T
+17:[2026-09-10T12:00:26.127Z] [INFO] [Classroom] Narration pipeline stdout: wired scene 1: a8606036d57843e58b958511d1aabbbe -> /media/sdddata1/openmaic-data/classrooms/R1tJBM1l0T/media/scene-01.m4b
+17:[2026-09-10T12:00:26.127Z] [INFO] [Classroom] Narration pipeline stdout: wired scene 1: a8606036d57843e58b958511d1aabbbe -> /media/sdddata1/openmaic-data/classrooms/R1tJBM1l0T/media/scene-01.m4b
+18:wired scene 2: 25040a1d6998464d848a10273938173a -> /media/sdddata1/openmaic-data/classrooms/R1tJBM1l0T/media/scene-02.m4b
+19:wired scene 3: 9cfadf2ea8d24ab5844e1e67387f13ca -> /media/sdddata1/openmaic-data/classrooms/R1tJBM1l0T/media/scene-03.m4b
+20:narration wired for 3/3 scenes
